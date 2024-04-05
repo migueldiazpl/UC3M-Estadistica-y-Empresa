@@ -1,0 +1,884 @@
+---
+title: "Trabajo Final Individual"
+author: "Miguel Díaz-Plaza Cabrera - Grado en Estadística y Empresa - Métodos Estadísticos en Minería de Datos - Curso 22/23"
+date: "`r Sys.Date()`"
+output:
+  word_document:
+    reference_docx: Mystyleword.docx
+    toc: yes
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+    theme: cerulean
+    highlight: haddock
+    fig_width: 10.5
+    fig_height: 7.5
+    fig_caption: yes
+  geometry: left=3cm,right=3cm,top=2cm,bottom=2cm
+  mathjax: local
+  self_contained: no
+  pdf_document:
+    toc: yes
+    toc_depth: 4
+    keep_tex: yes
+    includes:
+        in_header: "wrap-code.tex"
+font-family: Helvetica
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+```
+
+\pagebreak
+
+## Introducción 
+
+https://www.kaggle.com/datasets/akshaydattatraykhare/diabetes-dataset 
+
+**El conjunto de datos “Diabetes.csv” incluye información sobre mujeres mayores de 21:**
+
+**Pregnancies: Number of pregnancies. Número de embarazos.**
+
+**Glucose: Glucose level in blood. Nivel de glucosa en sangre.**
+
+**BloodPressure: Blood pressure measurement. Medida de presión en sangre.**
+
+**SkinThickness: Thickness of the skin. Grosor de la piel.**
+
+**Insulin: Insulin level in blood. Nivel de insulina en sangre.**
+
+**BMI: Body mass index. Es el IMC (Índice Masa Corporal)**
+
+**DiabetesPedigreeFunction: Diabetes percentage. Es un score que muestra el riesgo que tiene la familia**
+
+**Age: Age. Año**
+
+**Outcome: Diabetes: 1 is Yes and 0 is No. 1 SÍ tiene diabetes, 0 NO tiene diabetes**
+
+Los objetivos fundamentales de la práctica y las preguntas que debemos responder van a ser las siguientes:
+
+  - El objetivo principal es **predecir si una persona tiene diabetes o no**
+
+  - Para ello, primeramente, debemos procesar adecuadamente los datos de los que disponemos, analizando los predictores y la variable respuesta, transformando nuestros datos si es necesario e imputando de forma correcta los valores faltantes.
+  
+  - Una vez hecho lo anterior, pasaremos a estudiar modelos de clasificación supervisada, como regresión logística, clasificación lineal o análisis discriminante y SVM (Support Vector Machines). Compararemos los errores obtenidos y realizaremos inferencia, para ver qué variables son las que tienen mayor influencia en la respuesta.
+  
+\pagebreak
+
+## Transformación de los datos
+
+Primero de todo, cargamos los datos
+
+```{r}
+Diabetes <- read.csv("~/MIGUEL/ESTADÍSTICA Y EMPRESA UC3M/AÑO 4/1º CUATRIMESTRE/MÉTODOS ESTADÍSTICOS EN MINERÍA DE DATOS/TRABAJO FINAL INDIVIDUAL/Diabetes.csv")
+head(Diabetes)
+```
+
+A continuación, hacemos un summary para ver cómo son los datos que tenemos.
+
+```{r}
+summary(Diabetes)
+```
+
+Observamos como el rango del número de embarazos va de $0$ a $17$ embarazos, que es el máximo; o la edad abarca un rango de $21$ a $81$ años. Sin embargo, vemos como en las variables de nivel de glucosa, presión en sangre, grosor de la piel, insulina e índice de masa corporal, el mínimo es 0, cosa que no tiene sentido, ya que dichas variables no pueden tener un valor igual a 0. Por lo que vamos a tomar estos valores iguales a 0 como si fueran NA's.
+
+
+```{r}
+Diabetes2=Diabetes[,c(2,3,4,5,6)]
+Diabetes2=as.matrix(Diabetes2)
+Diabetes2[Diabetes2==0]<-NA
+Diabetes2<-as.data.frame(Diabetes2)
+Diabetes2<-cbind(Diabetes2,Diabetes[,c(1,7,8,9)])
+head(Diabetes2)
+```
+
+Ya tenemos correctamente preprocesados los datos, asi que el summary correcto es el siguiente.
+
+```{r}
+summary(Diabetes2)
+```
+
+Observamos como la variable Pregnancies, que puede tener 0 sigue mantiendo esos 0, al igual que la variable Outcome. El resto de variables que tenían 0, ya podemos analizarlas correctamente. Es notable el aumento de las NA's de SkinThickness que aumenta de $41$ a $395$ o Insulin de $40$ a $395$. Ya las medias que nos aparecen son las correctas.
+
+También, haremos un EDA (Análisis Exploratorio de los Datos)
+
+```{r}
+library(skimr)
+```
+
+
+```{r}
+skim(Diabetes2)
+```
+
+
+```{r}
+str(Diabetes2)
+```
+
+Vemos el porcentaje de NA's de cada variable, que puede resultarnos interesante saber,a la hora de la realización de la práctica.
+
+```{r}
+noms <- colnames(Diabetes2)
+Nas <- round((1 - skim(Diabetes2)$complete_rate)*100,3)
+df_NA <- data.frame(noms,Nas)
+df_NA
+```
+
+La tabla anterior muestra el porcentaje de NAs de cada variable sobre $100$. Nos llama la atención las variables SkinThickness (grosor de la piel) con un $33.594\%$ y Insulin (nivel de insulina) con un $51.432\%$
+
+Especialmete, la variable **Insulina**, ya que más del $50\%$ son NA's.
+
+Vamos a reducir las observaciones de la base de datos, eliminando aquellas observaciones cuya variable Insulina es NA.
+
+```{r}
+Diabetes3<-Diabetes2[is.na(Diabetes2$Insulin)==FALSE,]
+```
+
+Hacemos un gráfico que muestre la variable categórica de salida, es decir, 1 si tienen diabetes y 0 si no tienen diabetes. Comparando con aquellos que NO tienen la insulina NA ($373$ datos) y el completo, que sí tiene NA's en la variable Insulina ($768$ datos)
+
+```{r}
+# Gráfico comparando la variable respuesta: Diabetes2 (completo, con NA's en Insulina) frente a Diabetes3 (sin NA's en Insulina)
+library(ggplot2)
+ggplot(data = Diabetes2) +
+  geom_bar(aes(x=factor(Outcome),fill=factor(Outcome)))
+ggplot(data = Diabetes3) +
+  geom_bar(aes(x=factor(Outcome),fill=factor(Outcome)))
+```
+
+Recordamos que $1$ significa que tienen diabetes y $0$ que no tienen diabetes.
+
+En estas dos gráficas verificamos que no hay grandes diferencias proporcionalmente en la variable salida con el conjunto de datos completo con Insulina NA (Diabetes2) y el que hemos quitado esos NA de Insulina (Diabetes3). Por este motivo, a partir de ahora seguiremos utilizando **Diabetes3**, formado por 373 observaciones, que no tienen NA's en la variable Insulina.
+
+Esta vez no vamos a eliminar los NA's, los vamos a reemplazar de forma razonable, según los siguientes métodos.
+
+Los datos faltantes pueden tener diferentes estructuras: 
+
+- Missing Completly At Random (MCAR). 
+
+- Missing At Random (MAR)
+
+- Missing Not At Random (NMAR)
+
+A continuación, vamos a realizar un test que verifica si los datos faltantes son de tipo MCAR o no. La hipótesis nula va a ser que los datos faltantes son MCAR; por lo que un p-valor inferior a $0.05$ lo interpretaremos como que los datos faltantes no son MCAR.
+
+El test lo hemos encontrado en esta página: https://search.r-project.org/CRAN/refmans/naniar/html/mcar_test.html
+
+```{r,warning=FALSE,message=FALSE}
+library(naniar)
+```
+
+```{r}
+mcar_test(Diabetes2)
+```
+Con los datos completos (con NA's en Insulin), se rechaza la hipótesis nula, por lo que podemos decir que los datos faltantes no son MCAR (Missing Completly At Random). Es decir, o eran Missing At Random (MAR) o Missing Not At Random (NMAR), es decir, había alguna relación entre los datos faltantes.
+
+```{r}
+mcar_test(Diabetes3)
+```
+
+Con los datos modificados, no podemos rechazar la hipotesis nula, por lo que los datos faltantes ahora sí son MCAR.
+
+Con este test verificamos que la n de este modificado conjunto de datos, sin los de insulina con NA's, es un tamaño muestral suficiente ($373$).
+
+
+Vamos a utilizar el paquete mice() para los datos faltantes, que no son la media del resto de datos, si no que genera los datos a través de predicciones aleatorias. Como la variable `Outcome` es una variable que toma valores entre 0 y 1, utilizamos mice sin dicha columna. La variable `Pregnancies` tiene una cola muy larga, pero lo podemos incluir en el mice, porque también trabaja con distribuciones que no son normales. Esta es la principal desventaja del paquete MICE frente a otros como Amelia o Hmisc.
+
+```{r}
+# Eliminamos la variable Outcome para utilizar el mice
+Diabetes4<-Diabetes3[-9]
+```
+
+El paquete MICE tiene una función llamada md.pattern(), que nos devuelve una tabla con los valores faltantes presentes en cada variable del dataset.
+
+```{r}
+library(mice)
+md.pattern(Diabetes4)
+```
+
+En esta página: https://medium.com/coinmonks/dealing-with-missing-data-using-r-3ae428da2d17 encontramos información sobre el paquete MICE. Encontramos muy interesante de utilizar para la realización de nuestro trabajo la `library(VIM)`, que contiene funciones sobre los datos faltantes.
+
+```{r,warning=FALSE,message=FALSE}
+#install.packages("VIM")
+library(VIM)
+```
+
+Una de estas funciones que nos resulta útil utilizar es el gráfico que nos muestra el porcentaje de missing data.
+
+```{r}
+mice_plot <- aggr(Diabetes4, col=c('navyblue','yellow'), numbers=TRUE, sortVars=TRUE, labels=names(Diabetes4), cex.axis=.7, gap=3, ylab=c("Missing data","Pattern"))
+```
+
+Observamos que todas las variables tienen una cantidad razonable de missing data, que no nos supondrán un gran problema. Por ejemplo, la variable SkinThickness o grosor de piel, en el conjunto de datos inicial observábamos más de $1/3$ de NA's; pero cuando hemos quitado los NA's de la variable Insulina, el missing data de la variable SkinThickness se ha reducido a un $5\%$. Lo que quiere decir que la mayoría de observaciones que tenían en Insulina NA, también tenían NA en SkinThickness. Por lo que confirmamos lo visto anteriormente en el test de MCAR, de que había relación entre los datos faltantes ANTES de la eliminación de las observaciones que poseían NA en Insulin.
+
+\pagebreak
+
+## Imputación de datos faltantes con MICE
+
+Ahora, con el MICE, vamos a imputar los datos faltantes.
+
+Vamos a hacer que el mice en lugar de hacer una predicción aleatoria, haga varias, en nuestro caso 5 veces. Más tarde, a la hora de hacer la clasificación logística, usaremos la función pool() para combinar dichos 5 modelos aleatorios.
+
+```{r,warning=FALSE,message=FALSE}
+#install.packages("mice")
+library(mice)
+```
+
+Pondremos las repeticiones del mice por defecto, es decir, **m=$5$**, y la semilla aleatoria pondremos el NIA=**$100430566$**. Además, el método que utilizaremos será 'pmm', que significa predictive mean matching. Es decir, los datos se imputarán tomando como referencia la media.
+
+```{r,warning=FALSE,message=FALSE}
+imputed_Data <- mice(Diabetes4, m=5, maxit = 50, method = 'pmm', seed = 100430566,print=FALSE)
+print(imputed_Data)
+```
+
+Una vez hemos generado el data imputado, tenemos que introducirlo en nuestros datos, para estudiar la clasificación. 
+
+La forma más sencilla de hacerlo es con la función complete(), que lo que hace es completar los valores faltantes con los valores de la primera imputación de las cinco que acabamos de hacer.
+
+```{r}
+Diabetes5_sencillo=complete(imputed_Data,1) # el 1 significa que es la 1st de 5 imputaciones
+Diabetes5_sencillo=cbind(Diabetes5_sencillo,Outcome=Diabetes3$Outcome)
+head(Diabetes5_sencillo)
+```
+
+Comprobamos que no hay NA's en el summary: 
+
+```{r}
+summary(Diabetes5_sencillo)
+```
+
+Para comprobar si los datos imputados siguen de forma adecuada las distribuciones de los datos originales, vamos a utilizar las funciones `stripplot()` y `densityplot()`, que aparecen en el pdf "mice.pdf" 
+
+```{r}
+stripplot(imputed_Data, pch = 20, cex = 1.2)
+```
+
+Los puntos en azul son los puntos observados, mientras que los puntos rojos son los puntos imputados. Como podemos comprobar los puntos rojos siguen razonablemente bien a los azules, por lo que la imputación es correcta. La variable Insulin no tiene puntos rojos porque como hemos visto anteriormente, ya no tiene NA's.
+
+Como nuestros datos faltantes tienen la estructura Missing Completly Random (MCAR), es esperado que las distribuciones univariantes de los datos imputados y originales sean idénticas. Sin embargo si nuestros datos faltantes fueran Missing Arrangled (MAR), serían diferentes, aunque su distribución multivariante se asume que es idéntica.
+
+Otra forma de verificar la imputación es con la función densityplot(), que nos muestra las distribuciones marginales de los datos observados en azul; y en rojo, las m=$5$ densidades por cada predictor, por eso observamos $5$ funciones en rojo, cada una correspondiente a una repetición de los datos imputados.
+
+```{r}
+densityplot(imputed_Data, scales = list(x = list(relation = "free")))
+```
+
+\pagebreak
+
+## Regresión Logística
+
+La forma sencilla de imputar nuestros datos es la que hemos realizado anteriormente, elegir $1$ de los $5$ datasets de datos imputados, y completar nuestros datos con dichos datos imputados. 
+
+¿Pero qué pasaría si queremos utilizar las $5$ imputaciones? Ahí entra la forma avanzada.
+
+La forma avanzada de introducir los datos imputados en nuestros datos originales va a ser utilizando los métodos de clasificación supervisada que conocemos, en este caso, Regresión Logística 
+
+También se pueden calcular modelos de regresión lineal o ANOVA, pero en esta práctica no nos vamos a centrar en eso.
+
+Vamos a suponer una **Regresión Logística** entre la variable respuesta Outcome, y el resto de predictores. Aquí podemos discutir qué variables explicativas son significativas para predecir la variable respuesta de si tienen diabetes ($1$) o no tienen diabetes ($0$).
+
+Para ello, vamos a utilizar la función with.mids(), que aplica los datos completos a cada una de las $5$ repeticiones de datos imputados.
+
+La columna fmi contiene la fracción de información faltante; mientras que la columna lambda es la proporción de la varianza total atribuida a los datos faltantes. 
+
+Cuanto más aumentemos **m** (que en este caso es $5$), menor será el error de la simulación de datos imputados.
+
+Como queremos combinar los resultados de los $5$ modelos de regresión logística obtenidos en un solo modelo consolidado, vamos a utilizar la función pool() para ello.
+
+Antes de eso, dividiremos la muestra en una muestra de entrenamiento ($70\%$) y una muestra test ($30\%$). Para realizar el modelo de clasificación con la muestra de entrenamiento, y validarlo con la muestra test. 
+
+```{r}
+# Separamos en entrenamiento y test
+set.seed(100430566)
+train = sample(1:373, 261, replace = F)
+test = c(1:373)[-train] 
+
+# 261 entrenamiento y 112 test
+Diabetes3_train <- Diabetes3[train,]
+Diabetes3_test <- Diabetes3[test,]
+Diabetes5_sencillo_train <- Diabetes5_sencillo[train,]
+Diabetes5_sencillo_test <- Diabetes5_sencillo[test,]
+```
+ 
+Ahora sí: 
+
+```{r}
+# Forma avanzada, con los 5 datasets de MICE y el modelo de Regresión Logística
+fit_glm=with(imputed_Data, glm(Outcome~.,data = Diabetes3_train,family = binomial(link = "logit")))
+pool(fit_glm)
+summary(print(pool(fit_glm)))
+```
+
+Tras esta múltiple imputación, encontramos los siguientes predictores significativos:
+
+Porque su p-valor es inferior a $0.05$, las variables explicativas significativas son Glucose ($1.059834e-06$) y DiabetesPedigreeFunction ($8.006634e-03$). 
+
+```{r}
+fit_glm$analyses
+```
+
+En esta tabla podemos observar que la null deviance es $232.7$, mientras que la residual deviance es $129.9$. Por lo tanto, el valor del coeficiente **R2 de regresión logística** es $55.82\%$, lo que indica un ajuste ni bueno ni malo.
+
+Por tanto, a continuación, vamos a volver a realizar el modelo de regresión logística, pero solo con los dos predictores significativos.
+
+```{r}
+fit_glm2=with(imputed_Data, glm(Outcome~Glucose+DiabetesPedigreeFunction,data = Diabetes3_train,family = binomial(link = "logit")))
+summary(print(pool(fit_glm2)))
+```
+
+Ahora observamos que Glucose sigue siendo significativo tanto al $95\%$ como al $99\%$ de confianza, porque su p-valor es muy pequeño ($2.362222e-11$), pero sin embargo, DiabetesPedigreeFunction solo es significativo al $95\%$, pero no al $99\%$, su p-valor es de ($1.371523e-02$).
+
+Además observamos como este predictor, DiabetesPedigreeFunction, obtiene un error estandar muy alto ($0.534$) comparado con Glucose ($0.0065$).
+
+```{r}
+fit_glm2$analyses
+```
+
+En esta tabla podemos observar que la null deviance es $299.3$, mientras que la residual deviance es $219.6$. Por lo tanto, el valor del coeficiente **R2 de regresión logística** es $73.37\%$, lo que indica un ajuste bastante bueno, y que mejora al anterior.
+
+A continuación, obtenemos las predicciones de regresión logística para las $112$ observaciones de la muestra test.
+
+```{r}
+fit_glm2_2=glm(Outcome~Glucose+DiabetesPedigreeFunction,data = Diabetes5_sencillo_test,family = binomial(link = "logit"))
+predict_glm2_2_test <- predict.glm(fit_glm2_2,newdata=Diabetes5_sencillo_test[,-9],type="response")
+```
+
+```{r}
+predict_glm2_2_bin <- character(length=nrow(Diabetes5_sencillo_test))
+predict_glm2_2_bin[predict_glm2_2_test>0.5] <- 1
+predict_glm2_2_bin[predict_glm2_2_test<=0.5] <- 0
+addmargins(table(predict_glm2_2_bin,Diabetes5_sencillo_test$Outcome))
+```
+
+```{r}
+sum(predict_glm2_2_bin!=Diabetes5_sencillo_test$Outcome)/112
+```
+
+Notamos que la tasa de error test es de $0.2053571$. El clasificador lineal detecta correctamente 76/82 = $92.68\%$ de los que **no tienen diabetes**;y por otro lado, detecta correctamente a 13/30 = $43\%$ de los que **tienen diabetes**. Es decir, de los $30$ que verdaderamente tienen diabetes, detecta a $13$ y no detecta a $17$, un porcentaje ni bueno ni malo. Este clasificador, aunque detecta bastante bien a los que no tienen diabetes, no detecta tan bien a los que sí tienen de verdad diabetes, que es el objetivo principal de la práctica. Veremos más adelante comparado con los otros clasificadores cómo de bien funciona.
+
+\pagebreak
+
+## Clasificador Lineal o LDA (Análisis Discriminante Lineal)
+
+Vamos a pasar ahora con el **Clasificador Lineal o LDA (Análisis Discriminante Lineal)**, donde son importantes los coeficientes de la función discriminante para sacar conclusiones.
+
+```{r,warning=FALSE,message=FALSE}
+library(MASS)
+```
+
+Utilizaremos la imputación con una repetición (MICE=1) a partir de ahora en adelante en la práctica.
+
+```{r}
+Diabetes_lda<-lda(Outcome~.,data = Diabetes5_sencillo_train)
+Diabetes_lda
+```
+
+Como se puede comprobar, las probabilidades a priori son $0.6590038$ y $0.3409962$, respectivamente, para las personas que no tienen diabetes ($0$) y las que sí tienen diabetes ($1$). Esto corresponde a las $172$ y $89$ personas de las $261$ en la muestra de entrenamiento de las personas que no tienen diabetes ($0$) y las que sí tienen diabetes ($1$), respectivamente. 
+
+Por lo tanto, a priori se espera que las personas cumplan con la deuda. Los vectores de medias estimados son (111.5756,68.97674,27.2848,130.8372,31.420,2.837,0.499,28.075) y (145.629,74.471,33.415,208.51,35.22,4.6966,0.6252,36.11), respectivamente, para las dos clases. Sorprende que la media es más alta en el grupo que sí tienen diabetes para todas las categorías, pero especialmente en: Insulin, Pregnacies y Age. 
+
+Los coeficientes de la función discriminante estandarizada son: LD1
+
+Glucose                   0.030474068
+
+BloodPressure            -0.005337136
+
+SkinThickness             0.005614529
+
+Insulin                  -0.001006341
+
+BMI                       0.055533558
+
+Pregnancies               0.003425490
+
+DiabetesPedigreeFunction  0.631363245
+
+Age                       0.045588026
+
+Cuanto mayor, en valor absoluto, es este coeficiente, más importante es su papel en la función discriminante. Además, estos coeficientes representan las correlaciones parciales.
+
+Fijándonos en estos, son positivos en las variables Glucose, SkinThickness, BMI, Pregnancies, DiabetesPedigreeFunction, Age; por lo que a medida que aumentan estas variables, la variable respuesta aumenta, es decir, aumenta la probabilidad de que tenga diabetes. Pasa lo contrario con aquellas cuyos coeficientes son negativos, como BloodPressure e Insulin. Aun así, todos los coeficientes son bastante próximos a 0, lo que significa que ninguno provoca grandes variaciones en la variable respuesta, al saber también que están todas estandarizadas. Excepto el predictor DiabetesPedigreeFunction, que posee un coeficiente de $0.631363245$.
+
+```{r}
+plot(Diabetes_lda)
+```
+
+```{r}
+x= as.matrix(Diabetes3_train[,-9])
+Diabetes.manova = manova(x~Diabetes3_train$Outcome)
+Diabetes.wilks = summary(Diabetes.manova,test="Wilks")
+Diabetes.wilks
+```
+
+El test formal nos dice que Wilks lambda es $0.53583$ con p-valor $< 2.2e-16$, por lo que no rechazamos el modelo dsicriminante.
+
+A continuación, vamos a obtener el eigenvalue de la función discriminante, que como solo hay una, es LD1:
+
+```{r}
+Diabetes_lda$svd
+```
+
+Este valor, $12.46876$, es el cociente entre las desviaciones estándar entre y dentro de grupos sobre las variables discriminantes lineales.
+
+Como solo hemos obtenido una función discriminantes, la traza es $1$, es decir, esta función explica el $100\%$ de la función entre grupos.
+
+Vamos a hacer un scatterplot con su centroide que visualize lo anterior:
+
+```{r}
+#Plot
+LD1 = predict(Diabetes_lda)$x[,1]
+plot(LD1,xlab="first linear discriminant",type="n") 
+text(cbind(LD1),labels=unclass(Diabetes3_train$Outcome))
+
+# Group centroids
+sum(LD1*(Diabetes3_train$Outcome=="0"))/sum(Diabetes3_train$Outcome=="0")
+sum(LD1*(Diabetes3_train$Outcome=="1"))/sum(Diabetes3_train$Outcome=="1")
+```
+
+El centroide de LD1 es (-0.5551801; 1.072932).
+
+A continuación obtenemos las predicciones del clasificador lineal para las 112 observaciones de la muestra de test. Usando el modelo discriminante estimado vamos a clasificar los nuevos datos. El enfoque es que se calcula la probabilidad de que un individuo pertenezca a un determinado grupo usando el modelo discriminante, esto se hace para cada grupo, y para clasificar se utiliza la regla de Bayes.
+
+Necesitamos estimar las probabilidades a priori de pertenencia a cada grupo. Lo estimamos por la fracción de individuos en cada grupo, citada anteriormente. Esto sigue una binomial, con la varianza tendiendo a cero muy rápidamente.
+
+Vamos a utilizar en este caso la muestra de test
+
+```{r}
+Diabetes_lda_predict = predict(Diabetes_lda, Diabetes5_sencillo_test[,-9])
+Diabetes_lda_classify = Diabetes_lda_predict$class
+```
+
+El gráfico muestra las probabilidades de diabetes ($1$). Los puntos por encima de 0.5 se asignan a la clase de individuos que tienen diabetes, mientras que los puntos por debajo de 0.5 se asignan a la clase de individuos que no tienen diabetes. Notar que se grafican las probabilidades de la segunda columna ya que son estas las que corresponden a la probabilidad de diabetes.
+
+```{r}
+library(ggplot2)
+color_1 <- "deepskyblue2"
+color_2 <- "firebrick2"
+ggplot(Diabetes5_sencillo_test,aes(x=1:112,y=Diabetes_lda_predict$posterior[,2],color=as.factor(Outcome))) + 
+  theme_light(base_size=15) +
+  geom_point(size=2) + 
+  scale_color_manual(values=c(color_1,color_2)) +
+  xlab("Individual") +
+  ylab("Probabilidad de diabetes con clasificador lineal") +
+  geom_hline(yintercept=0.5)
+```
+
+Con estas probabilidades obtenemos la matriz de confusión para comparar las predicciones del clasificador lineal con los verdaderos valores de la variable Outcome, y contabilizamos los errores cometidos en la muestra test:
+
+```{r}
+addmargins(table(Diabetes_lda_predict$class,Diabetes5_sencillo_test$Outcome))
+```
+
+```{r}
+sum(Diabetes_lda_predict$class!=Diabetes5_sencillo_test$Outcome)/112
+```
+
+Notamos que la tasa de error test es de $0.2053571$, exactamente igual que regresión logística. El clasificador lineal detecta correctamente 71/82 = $86\%$ de los que **no tienen diabetes**;y por otro lado, detecta correctamente a 18/30 = $60\%$ de los que **tienen diabetes**. Es decir, de los $30$ que verdaderamente tienen diabetes, detecta a $18$ y no detecta a $12$, lo que indica la dificultad del problema y el fuerte solapamiento entre los grupos.
+
+
+## SVM (Support Vector Machines) 
+
+A continuación, aplicaremos un modelo SVM para los dos tipos de Outcome. Recordábamos que eran: $1$ si tenía diabetes y $0$ si no tenía diabetes. 
+
+```{r,message=FALSE,warning=FALSE}
+library(e1071)
+library(rattle)
+library(kernlab)
+```
+
+```{r}
+model_svm <-svm(as.factor(Outcome)~.,data = Diabetes5_sencillo, type="C-classification",scale=T,cross=5)
+model_svm
+```
+
+La herramienta más útil de SVM es la visualización de los datos. A continuación hemos creado un plot para más de dos variables. Para ello, hemos seleccionado las dos primeras variables, Glucose y BloodPressure y hemos creado una lista con las medias de cada variable restante. 
+
+```{r}
+plot(model_svm,data=Diabetes5_sencillo, Glucose~BloodPressure,slice=list(SkinThickness=mean(Diabetes5_sencillo$SkinThickness),Insulin=mean(Diabetes5_sencillo$Insulin),BMI=mean(Diabetes5_sencillo$BMI),Pregnancies=mean(Diabetes5_sencillo$Pregnancies),DiabetesPedigreeFunction=mean(Diabetes5_sencillo$DiabetesPedigreeFunction),Age=mean(Diabetes5_sencillo$Age)))
+```
+
+
+```{r}
+error=1-model_svm$tot.accuracy/100
+error
+```
+
+Obtenemos el 5-fold CV error, más grande que regresión logística y el clasificador lineal. 
+
+Para mejorar el modelo (y aproximar mejor el error) podemos usar la función ´tune()´
+
+```{r}
+tuneResult=tune(svm, as.factor(Outcome)~.,data=Diabetes5_sencillo, ranges = list(cost = seq(0.5,7,0.5)),tunecontrol =
+ tune.control(nrepeat = 100,sampling = "cross",cross=5))
+tuneResult$best.model
+```
+
+```{r}
+param=tuneResult$best.parameters
+param
+```
+
+Nos sale un cost de $1$.
+
+Vamos a verlo gráficamente:
+
+```{r}
+plot(tuneResult)
+```
+
+
+```{r}
+summary(tuneResult)
+```
+
+Con el modelo “tuned” obtenemos el cost = C y kernel “radial”.
+
+```{r}
+model_final <- svm(as.factor(Outcome)~DiabetesPedigreeFunction+BloodPressure,data = Diabetes5_sencillo, type="C-classification",scale=T,cross=5,cost=param,kernel="radial")
+```
+
+
+```{r}
+plot(model_final,data=Diabetes5_sencillo, Glucose~BloodPressure,slice=list(SkinThickness=mean(Diabetes5_sencillo$SkinThickness),Insulin=mean(Diabetes5_sencillo$Insulin),BMI=mean(Diabetes5_sencillo$BMI),Pregnancies=mean(Diabetes5_sencillo$Pregnancies),DiabetesPedigreeFunction=mean(Diabetes5_sencillo$DiabetesPedigreeFunction),Age=mean(Diabetes5_sencillo$Age)))
+```
+
+```{r}
+errortune<-1-model_final$tot.accuracy/100
+errortune
+```
+
+Tras varias pruebas, el error con tune() no disminuye. No hemos sido capaces de estabilizar el cost con tune(). Creemos que la razón principal es porque hay más de dos variables.
+
+\pagebreak
+
+## PCA (Análisis de Componentes Principales)
+
+Otra parte del trabajo va a ser la reducción de dimensiones, utilizando PCA (Análisis de Componentes Principales). La ventaja de utilizar PCA es que nos da variables dependientes.
+
+```{r,warning=FALSE,message=FALSE}
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+```
+
+Eliminamos la variable respuesta Outcome, para el PCA. 
+
+```{r}
+Diabetes6<-Diabetes5_sencillo[,-9]
+```
+
+FactorMineR estandariza automáticamente los datos, por lo que no hace falta escalar.
+
+```{r}
+# PCA con FactorMineR
+# Esta función, por defecto solo considera 5 dimensiones (es decir 5 PC) en los resultados. Eso puede cambiarse en el argumento ncp.
+Diabetes_PCA<-PCA(Diabetes6, graph = F)
+Diabetes_PCA$var$cor
+```
+
+La componente 1 explica bastante bien `Glucose`, `Age`; y no tan bien `DiabetesPedigreeFunction`.
+
+La componente 2 explica bastante bien `BMI` y `Pregnacies`**
+
+Calculamos la variabilidad explicada por las PC.
+
+```{r}
+# Sacamos los valores
+eig.val<-get_eigenvalue(Diabetes_PCA);eig.val
+mean(eig.val[,1])
+
+# Gráficamente con el SCREE PLOT
+fviz_eig(Diabetes_PCA,addlabels=TRUE)
+
+```
+
+Podemos ver que con la componente 1 explicamos únicamente el $32.1539\%$ de la varianza total del modelo y con la componente 1 y componente 2 explicamos el $51.12362\%$ % de la variabilidad, que es no es un buen porcentaje, pero es el mejor para la representación gráfica de las componentes. 
+
+Lo suyo sería elegir **5 componentes**, porque explican el $87.45911\%$ de la variabilidad total.
+
+Teniendo en cuenta esto, vamos a hacer el biplot de las dos primeras componenetes.
+
+```{r}
+# Gráfico para los individuos
+fviz_pca_ind(Diabetes_PCA)
+
+# Gráfico para las variables
+fviz_pca_var(Diabetes_PCA,col.var="cos2",repel=T)
+```
+
+```{r}
+fviz_pca_biplot(Diabetes_PCA, col.var="cos2",repel=T)
+```
+
+El biplot representa tanto variables como individuos en el mismo gráfico. Lo que demuestra claramente este biplot, es que la mitad aproximadamente de los datos se encuentran a la izquierda del gráfico, y las flechas de las variables están todas a la derecha; lo que indica que prácticamente la mitad de la variabilidad de los datos no es explicada por las 2 primeras componentes principales, afirmando lo que habíamos visto anteriormente.
+
+Para visualizar las variables, la función get_pca_var() da los resultados para las variables utilizadas, que son las coordenadas, las correlaciones y las contribuciones.
+
+```{r}
+var=get_pca_var(Diabetes_PCA)
+var
+var$coord
+```
+
+FactoMineR no devuelve directamente la matriz de rotación o loadings(autovectores). Pero podemos calcularlos simplemente dividiendo las coordenadas entre la raiz del autovalor correspondiente
+
+```{r}
+aut <- PCA(Diabetes6, scale.unit =TRUE, graph = FALSE)
+loadings<-sweep(Diabetes_PCA$var$coord,2,sqrt(Diabetes_PCA$eig[1:5,1]),FUN="/")
+loadings
+```
+
+Ahora sí, la contribución de las variables a las componentes principales.
+
+```{r}
+round(var$contrib,2)
+corrplot(var$contrib,is.corr=F)
+fviz_contrib(Diabetes_PCA,choice="var",axes=1) 
+fviz_contrib(Diabetes_PCA,choice="var",axes=2)
+fviz_contrib(Diabetes_PCA,choice="var",axes=3)
+fviz_contrib(Diabetes_PCA,choice="var",axes=4)
+fviz_contrib(Diabetes_PCA,choice="var",axes=5)
+fviz_contrib(Diabetes_PCA,choice="var",axes=1:5)
+```
+
+En el corrplot observamos como la componente 1 explica muy bien `Glucose`, `Age` y `Insulin`. La componente 2 explica bastante bien `BMI` y  `Pregnacies`. Valores altos indican una buena representación de la variable en la componente principal.
+
+En el gráfico de la contribución total a PC1, PC2, PC3, PC4 y PC5 se observa como `DiabetesPedigreeFunction` y `BloodPressure` son las dos variables que más explican, aunque las demás también explican bastante.
+
+A partir de esta conclusión, vamos a repetir los modelos de clasificación de regresión logística, clasificador lineal o análisis discriminante y SVM (Support Vector Machines), esta vez utilizando únicamente esas dos variables, que son las que más influyen en la respuesta según nuestra interpretación del PCA. Estos dos predictores son: `DiabetesPedigreeFunction` y `BloodPressure`
+
+\pagebreak
+
+## Regresión logística con las dos variables del PCA
+
+```{r}
+fit_glm3<-glm(Outcome~DiabetesPedigreeFunction+BloodPressure,data = Diabetes5_sencillo_train,family = binomial(link = "logit"))
+summary(fit_glm3)
+```
+
+En esta tabla podemos observar que, además de que las dos variables son significativas, la null deviance es $334.96$, mientras que la residual deviance es $314$. Por lo tanto, el valor del coeficiente **R2 de regresión logística** es $93.74\%$, que es bastante superior a los obtenidos anteriormente en regresión logística y bastante bueno.
+
+A continuación, obtenemos las predicciones de regresión logística para las $112$ observaciones de la muestra test.
+
+```{r}
+predict_glm3_test <- predict.glm(fit_glm3,newdata=Diabetes5_sencillo_test[,-9],type="response")
+```
+
+```{r}
+predict_glm3_bin <- character(length=nrow(Diabetes5_sencillo_test))
+predict_glm3_bin[predict_glm3_test>0.5] <- 1
+predict_glm3_bin[predict_glm3_test<=0.5] <- 0
+addmargins(table(predict_glm3_bin,Diabetes5_sencillo_test$Outcome))
+```
+
+```{r}
+sum(predict_glm3_bin!=Diabetes5_sencillo_test$Outcome)/112
+```
+
+Notamos que la tasa de error test es de $0.2767857$. El clasificador lineal detecta correctamente 75/82 = $91.46\%$ de los que **no tienen diabetes**;y por otro lado, detecta correctamente a 6/30 = $20\%$ de los que **tienen diabetes**. Es decir, de los $30$ que verdaderamente tienen diabetes, detecta a $6$ y no detecta a $24$, un porcentaje bajísimo. Este clasificador, aunque detecta bastante bien a los que no tienen diabetes, detecta bastante mal a los que sí tienen de verdad diabetes, que es el objetivo principal de la práctica, por lo que no nos sirve este clasificador.
+
+\pagebreak
+
+## Clasificador Lineal o LDA (Análisis Discriminante Lineal) con las dos variables del PCA 
+
+```{r,warning=FALSE,message=FALSE}
+library(MASS)
+```
+
+```{r}
+Diabetes_lda2<-lda(Outcome~DiabetesPedigreeFunction+BloodPressure,data = Diabetes5_sencillo_train)
+Diabetes_lda2
+```
+
+Como se puede comprobar, las probabilidades a priori son $0.6590038$ y $0.3409962$, coinciden con las anteriores.
+
+Los vectores de medias estimados son (0.4995291,68.97674) y (0.6252697,74.47191), respectivamente, para las dos clases. 
+
+Los coeficientes de la función discriminante estandarizada son: LD1
+
+DiabetesPedigreeFunction 1.98856294
+
+BloodPressure            0.06607566
+
+Cuanto mayor, en valor absoluto, es este coeficiente, más importante es su papel en la función discriminante. DiabetesPedigreeFunction tiene más influencia que BloodPressure. 
+
+A continuación obtenemos las predicciones del clasificador lineal para las 112 observaciones de la muestra de test. 
+
+```{r}
+Diabetes_lda2_predict = predict(Diabetes_lda2, Diabetes5_sencillo_test[,-9])
+Diabetes_lda2_classify = Diabetes_lda2_predict$class
+```
+
+Con estas probabilidades obtenemos la matriz de confusión para comparar las predicciones del clasificador lineal con los verdaderos valores de la variable Outcome, y contabilizamos los errores cometidos en la muestra test:
+
+```{r}
+addmargins(table(Diabetes_lda2_predict$class,Diabetes5_sencillo_test$Outcome))
+```
+
+```{r}
+sum(Diabetes_lda2_predict$class!=Diabetes5_sencillo_test$Outcome)/112
+```
+
+Notamos que la tasa de error test es de $0.2678571$, un poquito mejor que logística. El clasificador lineal detecta correctamente 76/82 = $92.68\%$ de los que **no tienen diabetes**;y por otro lado, detecta correctamente a 6/30 = $30\%$ de los que **tienen diabetes**. Es decir, de los $30$ que verdaderamente tienen diabetes, detecta a $6$ y no detecta a $24$, lo que indica la dificultad del problema y el fuerte solapamiento entre los grupos. Volvemos a obtener la misma conclusión que el último clasificador de regresión logística, predice muy bien a los que no tienen diabetes, pero falla en los que si tienen diabetes que son los que nos interesan, aunque es mínimamaente mejor en este aspecto que logística.
+
+\pagebreak
+
+## SVM (Support Vector Machines) con las dos variables del PCA
+
+```{r,message=FALSE,warning=FALSE}
+library(e1071)
+library(rattle)
+library(kernlab)
+```
+
+```{r}
+model_svm2 <-svm(as.factor(Outcome)~DiabetesPedigreeFunction+BloodPressure,data = Diabetes5_sencillo, type="C-classification",scale=T,cross=5)
+model_svm2
+```
+```{r}
+plot(model_svm2,data=Diabetes5_sencillo[,c(2,7,9)])
+```
+
+```{r}
+error2=1-model_svm2$tot.accuracy/100
+error2
+```
+
+Observamos que el 5-fold CV es más alto comparado con el modelo anterior de SVM.
+
+Para mejorar el modelo (y aproximar mejor el error) podemos usar la función ´tune()´
+
+```{r}
+tuneResult2=tune(svm, as.factor(Outcome)~DiabetesPedigreeFunction+BloodPressure,data=Diabetes5_sencillo, ranges = list(cost = seq(0.5,7,0.5)),tunecontrol =
+ tune.control(nrepeat = 100,sampling = "cross",cross=5))
+tuneResult2$best.model
+```
+
+
+```{r}
+param2=tuneResult2$best.parameters
+param2
+```
+
+Ese es el cost = C
+
+Vamos a verlo gráficamente:
+
+```{r}
+plot(tuneResult2)
+```
+
+```{r}
+summary(tuneResult2)
+```
+
+Con el modelo “tuned” obtenemos cost y kernel “radial”.
+
+```{r}
+model_final2 <- svm(as.factor(Outcome)~DiabetesPedigreeFunction+BloodPressure,data = Diabetes5_sencillo, type="C-classification",scale=T,cross=5,cost=param,kernel="radial")
+```
+
+```{r}
+plot(model_final2,data=Diabetes5_sencillo[,c(2,7,9)])
+```
+
+```{r}
+errortune2<-1-model_final2$tot.accuracy/100
+errortune2
+```
+
+El error con tune sí ha disminuido. Ahora con dos variables sí hemos sido capaces de estabilizar el cost.
+
+\pagebreak
+
+## Árbol de regresión 
+
+Para la mejor visualización de los datos, vamos a crear un **árbol de regresión** para predecir `Outcome` mediante todos los predictores que disponemos.
+
+Utilizaremos la función `tree` 
+
+```{r,message=FALSE}
+library(tree)
+tree_Diabetes <- tree(Outcome~.,data=Diabetes5_sencillo_train, control=tree.control(nobs=nrow(Diabetes5_sencillo_train),mincut=2,minsize=4))
+```
+
+```{r,message=FALSE}
+plot(tree_Diabetes)
+text(tree_Diabetes,pretty=0)
+```
+
+Vemos un gráfico del árbol construido. En primer lugar tenemos la división $Glucose<154.5$ y $Glucose\geq 154.5$. Las observaciones $Glucose<154.5$ se dividen luego en $Age<28.5$ y $Age\geq 28.5$, etc. Los números que aparecen al final de las hojas corresponden al Outcome en cada uno de las regiones creadas. Cuando se llega a $1$ o $0$, el nodo se termina. 
+
+Por ejemplo, los que tienen $Glucose\geq 154.5$ e $Insulin<80$, son todos no diabéticos. Mientras que, los que tienen $Glucose<154.5$, $Age<28.5$, $SkinThickness\geq30.5$ y $BMI\geq45.4$ son diabéticos.
+
+
+```{r,message=FALSE}
+summary(tree_Diabetes)
+tree_Diabetes
+```
+
+También vemos un resumen del proceso. Aquí `Residual mean deviance` se refiere a la suma de los errores al cuadrado del árbol dividido por el número de observaciones, que es el estimador sesgado de la varianza del error. También vemos el proceso completo de partición en una tabla, donde podemos observar las divisiones realizadas, el número de observaciones en cada una de los nodos, la suma de cuadrados de los errores y el valor predicho en cada uno de los nodos (regiones). También aparece un asterisco para determinar cuando el nodo es terminal, que son los nodos de interés para realizar la predicción. Como se puede comprobar, hay nodos terminales con $2$ observaciones (lo hemos permitido, claro), por lo tanto aquí parece sensato podar el árbol.
+
+
+La función `cv.tree` realiza el proceso de validación cruzada para la poda del árbol. La función proporciona la suma de cuadrados de los errores de validación cruzada junto con el número de nodos de los subárboles construidos:
+
+```{r,message=FALSE}
+color_1 <- "deepskyblue2"
+color_2 <- "firebrick2"
+# Lo que hace la validación cruzada es sumar la deviance de cada nodo y elegir el mejor
+tree_Diabetes_cv <- cv.tree(tree_Diabetes,K=nrow(Diabetes5_sencillo_train))
+tree_Diabetes_cv$size
+tree_Diabetes_cv$dev
+plot(tree_Diabetes_cv$size,tree_Diabetes_cv$dev,type="b",col=color_1,lwd=3,
+     xlab="Tamaño del subárbol",ylab="Error cuadrático medio de validación cruzada")
+```
+
+Como se puede comprobar, validación cruzada sugiere tomar un subárbol con $4$ nodos.
+
+```{r,message=FALSE}
+tree_Diabetes_prune <- prune.tree(tree_Diabetes,best=4)
+plot(tree_Diabetes_prune)
+text(tree_Diabetes_prune,pretty=0)
+summary(tree_Diabetes_prune)
+tree_Diabetes_prune
+```
+
+Con este árbol hacemos predicciones en la muestra test.
+
+```{r}
+Diabetes_test_all_variables <- Diabetes5_sencillo_test
+pred_Diabetes_test_all_variables <- predict(tree_Diabetes_prune,newdata=Diabetes_test_all_variables)
+ECMT_tree <- mean((Diabetes_test_all_variables$Outcome-pred_Diabetes_test_all_variables)^2)
+ECMT_tree
+```
+El ECMT es de $0.1505622$, el menor de todos que nos han salido.
+
+\pagebreak
+
+## Conclusiones
+
+Con todo lo visto anteriormente, vamos a sacar impresiones y conclusiones a los objetivos que teníamos al principio de la práctica.
+
+Respecto a la imputación de los datos con MICE, hemos encontrado el siguiente problema. A la hora de imputar de forma compleja, es decir, con las $5$ imputaciones, como la función with.mids() tiene que ir acompañada de un modelo logístico, lineal o ANOVA, para la regresión logística no hemos tenido problema; sin embargo, para el resto de métodos nos hemos visto obligados a utilizar únicamente una de las $5$ imputaciones. Aún así, pienso que los resultados obtenidos no hubieran variado mucho porque estamos imputando con la media (pmm), al fin y al cabo.
+
+Los primeros errores que obtenemos con los primeros modelos con todas las variables son los siguientes. Con regresión logística, y los predictores significativos Glucose y DiabetesPedigreeFunction, un error en la muestra test de $0.2053$. Con el clasificador lineal (LDA), nos sale un error de $0.2053$, exactamente igual que regresión logística. Sin embargo, mientras que el clasificador logístico detecta correctamente a un $43\%$ de los que tienen diabetes; el clasificador lineal lo hace con un $60\%$ de acierto, por lo que es un poquito mejor el clasificador lineal (LDA) que el logístico. Por otro lado, con SVM, en este casi sin tune(), obtenemos un error mayor que en ambos modelos anteriores.
+
+Una vez aplicamos el PCA (Análisis de Componentes Principales), nos salen $5$ componentes, y los dos predictores que más contribuyen a ellos son BloodPressure y DiabetesPedigreeFunction; volvemos a repetir los modelos anteriores, pero únicamente utilizando esos dos predictores. Además, nos salen que las $2$ primeras componentes únicamente explican poco más de la mitad de la variabilidad de los datos. También, a pesar de que claramente BloodPressure y DiabetesPedigreeFunction, contribuyen más a explicar las $5$ PC's, las demás variables no se quedan atrás. 
+
+Obtenemos que estos nuevos modelos no nos mejoran en ninguno de los $3$ casos (Logístico, LDA y SVM) ni el error ni el porcentaje de detectar a los que tienen diabetes. De hecho, estos nuevos modelos, sí que mejoran y ayudan a detectar mejor a los que NO tienen diabetes, pero esto no nos sirve de nada, porque el objetivo de la práctica es detectar a los que tienen diabetes, que son los que verdaderamente nos importan que sean detectados, al tratarse de una enfermedad. 
+
+Añadir, que al predecir con el árbol de regresión, podemos ver claramente que Glucosa es una variable bastante importante a la hora de separar ramas del árbol, cosa que tiene bastante sentido con la realidad. Y además, obtenemos un ECMT de $0.15$, el menor obtenido de todos.
+
+Por tanto, podemos afirmar que las dos variables escogidas como que más contribuyen a la respuesta en el PCA (BloodPressure y DiabetesPedigreeFunction) no eran las más adecuadas, había otras más importantes como la Glucose, lo confirmamos por lo obtenido en el árbol de regresión y en los predictores significativos del modelo de regresión logística. Aun así, nos hemos dado cuenta con los resultados obtenidos en los clasificadores de la dificultad del problema de predecir que tienen diabetes, dadas las variables de las que disponíamos. Y si tuvieramos que elegir un modelo de clasificación, nos quedaríamos con el **clasificador lineal o LDA (Análisis Discriminante Lineal)** o bien con el **árbol de regresión**.
+
+\pagebreak
+
+## Bibliografía
+
+  - Little's missing completely at random (MCAR) test. (n.d.). R-Project.org. Retrieved December 18, 2022, from https://search.r-project.org/CRAN/refmans/naniar/html/mcar_test.html
+
+  - Dealing with Missing Data using R | by Harshitha Mekala | Coinmonks. (n.d.). Medium. Retrieved December 18, 2022, from https://medium.com/coinmonks/dealing-with-missing-data-using-r-3ae428da2d17
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>
